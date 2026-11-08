@@ -1,0 +1,651 @@
+<title>PicoCarPod Cockpit</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: the pre-facelift P3 radio face (eject/AM/FM | 256x64 dot-matrix LCD | CD/MODE, then
+   VOLUME knob | numeric keys | navigator cluster | TUNING knob), steering-wheel keypad beside it,
+   data-source panel and console log below. Night cockpit, single dark theme. */
+:root {
+  --page: #121316;
+  --face: #2b2d31;          /* radio front plastic */
+  --face-edge: #3d4046;
+  --silver: #9ea2a7;        /* brushed bezel around the LCD */
+  --silver-dark: #6f7378;
+  --key: #202226;
+  --key-edge: #3a3e45;
+  --legend: #e9ecef;        /* white backlit legends, as on the real unit */
+  --ink: #d6dae0;
+  --ink-dim: #8a9099;
+  --ok: #7fd18b;
+  --warn: #f2b45a;
+  --font-ui: "Barlow", "Segoe UI", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font-family: var(--font-ui);
+  padding-block: 20px 32px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.wrap { max-width: 1100px; margin: 0 auto; display: grid; gap: 18px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
+header h1 { font: 600 1.15rem/1.2 var(--font-ui); margin: 0; }
+header h1 small { font-weight: 400; color: var(--ink-dim); margin-left: 8px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font: 500 0.78rem/1 var(--font-ui); letter-spacing: 0.04em; text-transform: uppercase; padding: 7px 10px; border-radius: 999px; background: #1b1d21; border: 1px solid var(--face-edge); color: var(--ink-dim); display: inline-flex; align-items: center; gap: 7px; }
+.chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-dim); display: inline-block; }
+.chip.ok i { background: var(--ok); } .chip.warn i { background: var(--warn); }
+
+.cockpit { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 18px; align-items: start; }
+@media (max-width: 820px) { .cockpit { grid-template-columns: minmax(0, 1fr); } }
+
+/* --- radio face --------------------------------------------------------------- */
+.radio { background: linear-gradient(180deg, #33363b, var(--face) 25%, #24262a); border: 1px solid var(--face-edge); border-radius: 14px; padding: 16px; box-shadow: 0 30px 60px -30px #000, inset 0 1px 0 #454950; display: grid; gap: 14px; }
+.slot { height: 10px; border-radius: 3px; background: linear-gradient(180deg, #0a0b0c, #1a1c1f); border: 1px solid #000; margin: 0 22%; box-shadow: inset 0 1px 2px #000; }
+.toprow { display: grid; grid-template-columns: 74px minmax(0, 1fr) 74px; gap: 12px; align-items: stretch; }
+@media (max-width: 560px) { .toprow { grid-template-columns: minmax(0, 1fr); } .sidekeys { flex-direction: row !important; } }
+.sidekeys { display: flex; flex-direction: column; justify-content: center; gap: 8px; }
+.lcd-bezel { background: linear-gradient(180deg, #b4b8bd, var(--silver) 40%, var(--silver-dark)); border-radius: 8px; padding: 10px; border: 1px solid #4a4e53; box-shadow: inset 0 1px 0 #d8dbdf, 0 2px 4px #000; display: grid; place-items: center; }
+.lcd-window { background: #1f2420; padding: 8px; border-radius: 3px; box-shadow: inset 0 2px 6px #000; max-width: 100%; }
+canvas#lcd { display: block; image-rendering: pixelated; }   /* never CSS-scaled: integer zoom only */
+.lcd-window p { margin: 6px 0 0; font: 500 0.66rem/1 var(--font-mono); color: #8d958a; text-align: right; letter-spacing: 0.04em; }
+
+button.key { appearance: none; font: 600 0.8rem/1 var(--font-ui); letter-spacing: 0.06em; text-transform: uppercase; color: var(--legend); background: linear-gradient(180deg, #2a2d32, var(--key)); border: 1px solid var(--key-edge); border-bottom-color: #0d0e10; border-radius: 7px; padding: 12px 8px; cursor: pointer; box-shadow: 0 2px 0 #0a0b0c, inset 0 1px 0 #3f444b; text-shadow: 0 0 6px rgba(233,236,239,0.35); transition: transform 60ms ease, box-shadow 60ms ease; min-height: 42px; }
+button.key small { display: block; font: 500 0.6rem/1 var(--font-ui); letter-spacing: 0.04em; color: var(--ink-dim); margin-top: 5px; text-transform: none; text-shadow: none; }
+button.key:active, button.key.pressed { transform: translateY(2px); box-shadow: 0 0 0 #000, inset 0 1px 0 #3f444b; }
+button.key:focus-visible, .knob:focus-visible, .wheel button:focus-visible, .btn:focus-visible { outline: 2px solid var(--legend); outline-offset: 2px; }
+button.key.ghost { color: var(--ink-dim); text-shadow: none; cursor: default; }
+
+.lowrow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 14px; align-items: center; }
+@media (max-width: 760px) { .lowrow { grid-template-columns: 1fr 1fr; } .numpad { display: none !important; } }
+.numpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; max-width: 220px; }
+.numpad button.key { padding: 9px 6px; min-height: 34px; font-size: 0.72rem; }
+.nav { display: grid; grid-template-columns: 56px 64px 56px; grid-template-rows: 32px 64px 32px; gap: 6px; align-items: stretch; }
+.nav .phone { grid-area: 1 / 1; } .nav .menu { grid-area: 1 / 3; } .nav .enter { grid-area: 3 / 1; } .nav .exit { grid-area: 3 / 3; }
+.nav .cross { grid-area: 2 / 1 / 3 / 4; display: grid; grid-template-columns: 1fr 64px 1fr; grid-template-rows: 1fr 1fr; justify-items: center; align-items: center; }
+.nav .cross .ring { grid-area: 1 / 2 / 3 / 3; width: 64px; height: 64px; border-radius: 50%; background: radial-gradient(circle at 45% 40%, #35393f, #1c1e22 70%); border: 1px solid var(--key-edge); box-shadow: 0 3px 6px #000, inset 0 1px 0 #454a52; position: relative; display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr 1fr; }
+.ring button { appearance: none; background: none; border: 0; color: var(--legend); font-size: 0.8rem; cursor: pointer; padding: 0; line-height: 1; }
+.ring .u { grid-area: 1 / 2; } .ring .d { grid-area: 3 / 2; } .ring .l { grid-area: 2 / 1; } .ring .r { grid-area: 2 / 3; } .ring .c { grid-area: 2 / 2; width: 18px; height: 18px; border-radius: 50%; background: #0d0e10; border: 1px solid #3a3e45; margin: auto; }
+.ring button:active { color: var(--warn); }
+.nav .cross .led { grid-area: 1 / 1; width: 10px; height: 4px; background: #6fcf7a; border-radius: 2px; box-shadow: 0 0 6px #6fcf7a; align-self: start; justify-self: end; margin: 2px 8px 0 0; }
+.knob-wrap { display: grid; justify-items: center; gap: 6px; }
+.knob { width: 84px; height: 84px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #3b4046, #17191c 72%); border: 1px solid var(--key-edge); box-shadow: 0 5px 12px #000, inset 0 1px 0 #4a5059; position: relative; cursor: ew-resize; user-select: none; display: grid; place-items: center; }
+.knob::after { content: ""; position: absolute; left: 50%; top: 5px; width: 3px; height: 12px; margin-left: -1.5px; background: var(--legend); border-radius: 2px; transform-origin: 50% 37px; transform: rotate(var(--rot, 0deg)); }
+.knob span { font: 600 0.58rem/1.15 var(--font-ui); letter-spacing: 0.08em; text-transform: uppercase; color: var(--legend); text-align: center; pointer-events: none; }
+
+/* --- steering wheel keypad ------------------------------------------------ */
+.wheel { background: linear-gradient(160deg, #26292e, #15171a); border: 1px solid var(--face-edge); border-radius: 48px 48px 26px 26px; padding: 22px 18px 18px; display: grid; gap: 14px; box-shadow: 0 30px 60px -30px #000, inset 0 1px 0 #35393f; }
+.wheel h2 { margin: 0; font: 500 0.72rem/1 var(--font-ui); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-dim); text-align: center; }
+.pad { display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr 1fr; gap: 6px; width: 170px; margin: 0 auto; }
+.wheel button { appearance: none; background: linear-gradient(180deg, #2f3339, #1f2226); border: 1px solid var(--key-edge); border-bottom-color: #0b0c0e; border-radius: 12px; color: var(--legend); font: 600 1.05rem/1 var(--font-ui); cursor: pointer; min-height: 50px; box-shadow: 0 2px 0 #0a0b0c, inset 0 1px 0 #40454d; transition: transform 60ms ease, box-shadow 60ms ease; }
+.wheel button:active, .wheel button.pressed { transform: translateY(2px); box-shadow: 0 0 0 #000, inset 0 1px 0 #40454d; }
+.wheel button small { display: block; font: 500 0.6rem/1 var(--font-ui); letter-spacing: 0.08em; color: var(--ink-dim); margin-top: 5px; }
+.pad .up { grid-area: 1 / 2; } .pad .down { grid-area: 3 / 2; } .pad .prev { grid-area: 2 / 1; } .pad .next { grid-area: 2 / 3; } .pad .mid { grid-area: 2 / 2; border-radius: 50%; }
+.wheel p { margin: 0; font-size: 0.78rem; color: var(--ink-dim); line-height: 1.4; text-align: center; }
+
+/* --- source / log ----------------------------------------------------------- */
+.panel { background: #17191c; border: 1px solid var(--face-edge); border-radius: 14px; padding: 14px 16px; display: grid; gap: 10px; }
+.panel h2 { margin: 0; font: 600 0.9rem/1.2 var(--font-ui); }
+.panel p { margin: 0; color: var(--ink-dim); font-size: 0.86rem; line-height: 1.45; max-width: 70ch; }
+.srcrow { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn { appearance: none; font: 600 0.82rem/1 var(--font-ui); letter-spacing: 0.04em; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--key-edge); background: #22252a; color: var(--ink); cursor: pointer; }
+.btn.primary { background: var(--legend); color: #15171a; border-color: transparent; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+details summary { cursor: pointer; font: 600 0.9rem/1.2 var(--font-ui); list-style: none; display: flex; justify-content: space-between; }
+details summary::after { content: "▸"; color: var(--ink-dim); } details[open] summary::after { content: "▾"; }
+pre.log { margin: 0; max-height: 220px; overflow: auto; font: 400 0.76rem/1.5 var(--font-mono); color: var(--ink-dim); background: #0e1013; border-radius: 8px; padding: 10px 12px; white-space: pre-wrap; word-break: break-word; }
+pre.log b { color: var(--ink); font-weight: 500; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 0.84rem; }
+.kv dt { color: var(--ink-dim); } .kv dd { margin: 0; font-family: var(--font-mono); font-size: 0.8rem; }
+code { font-family: var(--font-mono); font-size: 0.9em; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>PicoCarPod Cockpit <small>Volvo XC70 2008 · pre-facelift radio · iPod mode</small></h1>
+    <div class="chips">
+      <span class="chip" id="chip-src"><i></i>Demo</span>
+      <span class="chip" id="chip-conn"><i></i>—</span>
+      <span class="chip" id="chip-avrcp"><i></i>AVRCP —</span>
+    </div>
+  </header>
+
+  <div class="cockpit">
+    <section class="radio" aria-label="Radio">
+      <div class="slot" aria-hidden="true"></div>
+      <div class="toprow">
+        <div class="sidekeys">
+          <button class="key" data-cmd="eject">⏏</button>
+          <button class="key" data-cmd="src-am">AM</button>
+          <button class="key" data-cmd="src-fm">FM</button>
+        </div>
+        <div class="lcd-bezel">
+          <div class="lcd-window">
+            <canvas id="lcd" width="256" height="64" aria-label="Radio display"></canvas>
+            <p id="lcd-meta">256 × 64 dots</p>
+          </div>
+        </div>
+        <div class="sidekeys">
+          <button class="key" data-cmd="src-cd">CD</button>
+          <button class="key" data-cmd="mode">Mode</button>
+        </div>
+      </div>
+      <div class="lowrow">
+        <div class="knob-wrap"><div class="knob" id="knob-vol" tabindex="0" role="slider" aria-label="Volume knob" aria-valuenow="14"><span>Volume<br>Power</span></div></div>
+        <div class="numpad" aria-hidden="true">
+          <button class="key ghost" tabindex="-1">1</button><button class="key ghost" tabindex="-1">2 abc</button><button class="key ghost" tabindex="-1">3 def</button>
+          <button class="key ghost" tabindex="-1">4 ghi</button><button class="key ghost" tabindex="-1">5 jkl</button><button class="key ghost" tabindex="-1">6 mno</button>
+          <button class="key ghost" tabindex="-1">7 pqrs</button><button class="key ghost" tabindex="-1">8 tuv</button><button class="key ghost" tabindex="-1">9 wxyz</button>
+          <button class="key ghost" tabindex="-1">✱ auto</button><button class="key ghost" tabindex="-1">0 +</button><button class="key ghost" tabindex="-1"># scan</button>
+        </div>
+        <div class="nav">
+          <button class="key phone" data-cmd="phone">Phone</button>
+          <button class="key menu" data-cmd="menu">Menu</button>
+          <div class="cross">
+            <span class="led" aria-hidden="true"></span>
+            <div class="ring">
+              <button class="u" data-cmd="up" aria-label="Up">▲</button>
+              <button class="l" data-cmd="left" aria-label="Left">◀</button>
+              <span class="c"></span>
+              <button class="r" data-cmd="right" aria-label="Right">▶</button>
+              <button class="d" data-cmd="down" aria-label="Down">▼</button>
+            </div>
+          </div>
+          <button class="key enter" data-cmd="enter">Enter</button>
+          <button class="key exit" data-cmd="exit">Exit</button>
+        </div>
+        <div class="knob-wrap"><div class="knob" id="knob-tune" tabindex="0" role="slider" aria-label="Tuning knob" aria-valuenow="0"><span>Tuning<br>Sound</span></div></div>
+      </div>
+    </section>
+
+    <aside class="wheel" aria-label="Steering wheel keypad">
+      <h2>Steering wheel</h2>
+      <div class="pad">
+        <button class="up" data-cmd="volup">+<small>vol</small></button>
+        <button class="prev" data-cmd="prev">◀<small>prev</small></button>
+        <button class="mid" data-cmd="enter" aria-label="Enter">●</button>
+        <button class="next" data-cmd="next">▶<small>next</small></button>
+        <button class="down" data-cmd="voldown">−<small>vol</small></button>
+      </div>
+      <p>◀ ▶ send PlayControl next / previous. Volume stays in the car and is only drawn here.</p>
+    </aside>
+  </div>
+
+  <section class="panel">
+    <h2>Data source</h2>
+    <div class="srcrow">
+      <button class="btn" id="btn-demo">Demo player</button>
+      <button class="btn primary" id="btn-serial">Connect Pico (Web Serial)</button>
+      <span id="serial-note" style="color:var(--ink-dim);font-size:0.84rem"></span>
+    </div>
+    <p>The display is a 256 × 64 one-bit dot matrix (estimated from the photo: 4:1 glass, a 5 × 7 small font and
+      the same font at 2× for the main line), drawn with a hand-made 5 × 7 bitmap font with descenders and Polish
+      letters; every dot is either ink or backlight. Change <code>LCD_W</code> / <code>LCD_H</code> in the script if the real
+      panel differs. Demo mode runs a simulated phone. With a Pico on USB the page reads the <code>@J</code> JSON lines from
+      the firmware console and sends the console keys (<code>n</code>, <code>b</code>, space). Web Serial needs Chrome or Edge and is
+      blocked inside claude.ai: open <code>tools/cockpit.html</code> from the repo directly in the browser.</p>
+    <dl class="kv">
+      <dt>Connection</dt><dd id="kv-state">—</dd>
+      <dt>Phone</dt><dd id="kv-phone">—</dd>
+      <dt>Stream</dt><dd id="kv-stream">—</dd>
+      <dt>Autoplay</dt><dd id="kv-autoplay">—</dd>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <details>
+      <summary>Console log</summary>
+      <pre class="log" id="log"></pre>
+    </details>
+  </section>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const fmt = ms => { ms = Math.max(0, ms|0); const s = Math.floor(ms/1000); return Math.floor(s/60) + ':' + String(s%60).padStart(2,'0'); };
+  const logEl = $('log');
+  function log(line, strong){ const t = new Date().toLocaleTimeString('pl-PL', {hour12:false}); const b = document.createElement(strong ? 'b' : 'span'); b.textContent = t + '  ' + line + '\n'; logEl.appendChild(b); while (logEl.childNodes.length > 400) logEl.removeChild(logEl.firstChild); logEl.scrollTop = logEl.scrollHeight; }
+  const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+  // =====================================================================================
+  // Dot-matrix LCD: 1-bit framebuffer at the panel's native resolution, pixel font
+  // rasterised through a canvas and thresholded, then scaled up with a visible dot grid.
+  // =====================================================================================
+  const LCD_W = 256, LCD_H = 64;
+  const COL_BG = '#cfd6c3', COL_OFF = '#c2c9b6', COL_ON = '#151a14';
+  const fb = new Uint8Array(LCD_W * LCD_H);
+  const lcd = $('lcd'); const ctx = lcd.getContext('2d');
+  const dotCanvas = document.createElement('canvas'); dotCanvas.width = LCD_W; dotCanvas.height = LCD_H;
+  const dctx = dotCanvas.getContext('2d'); const dotImage = dctx.createImageData(LCD_W, LCD_H);
+  let scale = 2, gridPattern = null;
+
+  // ---- bitmap font: 5x7 cells (narrow glyphs 1-4 wide), row 8 is the descender row -------
+  // Hand-drawn so every dot is deliberate: no anti-aliasing, no thresholding artefacts.
+  const F = {};
+  function def(chars, rows){ for (const ch of chars) F[ch] = rows; }
+  def('0', ['.###.','#...#','#..##','#.#.#','##..#','#...#','.###.']);
+  def('1', ['..#..','.##..','..#..','..#..','..#..','..#..','.###.']);
+  def('2', ['.###.','#...#','....#','...#.','..#..','.#...','#####']);
+  def('3', ['#####','...#.','..#..','...#.','....#','#...#','.###.']);
+  def('4', ['...#.','..##.','.#.#.','#..#.','#####','...#.','...#.']);
+  def('5', ['#####','#....','####.','....#','....#','#...#','.###.']);
+  def('6', ['..##.','.#...','#....','####.','#...#','#...#','.###.']);
+  def('7', ['#####','....#','...#.','..#..','.#...','.#...','.#...']);
+  def('8', ['.###.','#...#','#...#','.###.','#...#','#...#','.###.']);
+  def('9', ['.###.','#...#','#...#','.####','....#','...#.','.##..']);
+  def('A', ['.###.','#...#','#...#','#####','#...#','#...#','#...#']);
+  def('B', ['####.','#...#','#...#','####.','#...#','#...#','####.']);
+  def('C', ['.###.','#...#','#....','#....','#....','#...#','.###.']);
+  def('D', ['###..','#..#.','#...#','#...#','#...#','#..#.','###..']);
+  def('E', ['#####','#....','#....','####.','#....','#....','#####']);
+  def('F', ['#####','#....','#....','####.','#....','#....','#....']);
+  def('G', ['.###.','#...#','#....','#.###','#...#','#...#','.####']);
+  def('H', ['#...#','#...#','#...#','#####','#...#','#...#','#...#']);
+  def('I', ['###','.#.','.#.','.#.','.#.','.#.','###']);
+  def('J', ['..###','...#.','...#.','...#.','...#.','#..#.','.##..']);
+  def('K', ['#...#','#..#.','#.#..','##...','#.#..','#..#.','#...#']);
+  def('L', ['#....','#....','#....','#....','#....','#....','#####']);
+  def('M', ['#...#','##.##','#.#.#','#.#.#','#...#','#...#','#...#']);
+  def('N', ['#...#','##..#','#.#.#','#..##','#...#','#...#','#...#']);
+  def('O', ['.###.','#...#','#...#','#...#','#...#','#...#','.###.']);
+  def('P', ['####.','#...#','#...#','####.','#....','#....','#....']);
+  def('Q', ['.###.','#...#','#...#','#...#','#.#.#','#..#.','.##.#']);
+  def('R', ['####.','#...#','#...#','####.','#.#..','#..#.','#...#']);
+  def('S', ['.####','#....','#....','.###.','....#','....#','####.']);
+  def('T', ['#####','..#..','..#..','..#..','..#..','..#..','..#..']);
+  def('U', ['#...#','#...#','#...#','#...#','#...#','#...#','.###.']);
+  def('V', ['#...#','#...#','#...#','#...#','.#.#.','.#.#.','..#..']);
+  def('W', ['#...#','#...#','#...#','#.#.#','#.#.#','##.##','#...#']);
+  def('X', ['#...#','#...#','.#.#.','..#..','.#.#.','#...#','#...#']);
+  def('Y', ['#...#','#...#','.#.#.','..#..','..#..','..#..','..#..']);
+  def('Z', ['#####','....#','...#.','..#..','.#...','#....','#####']);
+  def('a', ['.....','.....','.###.','....#','.####','#...#','.####']);
+  def('b', ['#....','#....','####.','#...#','#...#','#...#','####.']);
+  def('c', ['.....','.....','.###.','#....','#....','#...#','.###.']);
+  def('d', ['....#','....#','.####','#...#','#...#','#...#','.####']);
+  def('e', ['.....','.....','.###.','#...#','#####','#....','.###.']);
+  def('f', ['..##','.#..','###.','.#..','.#..','.#..','.#..']);
+  def('g', ['.....','.....','.####','#...#','#...#','.####','....#','.###.']);
+  def('h', ['#....','#....','####.','#...#','#...#','#...#','#...#']);
+  def('i', ['.#.','...','##.','.#.','.#.','.#.','###']);
+  def('j', ['...#','....','..##','...#','...#','...#','#..#','.##.']);
+  def('k', ['#...','#...','#..#','#.#.','##..','#.#.','#..#']);
+  def('l', ['##.','.#.','.#.','.#.','.#.','.#.','###']);
+  def('m', ['.....','.....','##.#.','#.#.#','#.#.#','#...#','#...#']);
+  def('n', ['.....','.....','####.','#...#','#...#','#...#','#...#']);
+  def('o', ['.....','.....','.###.','#...#','#...#','#...#','.###.']);
+  def('p', ['.....','.....','####.','#...#','#...#','####.','#....','#....']);
+  def('q', ['.....','.....','.####','#...#','#...#','.####','....#','....#']);
+  def('r', ['....','....','#.##','##..','#...','#...','#...']);
+  def('s', ['.....','.....','.####','#....','.###.','....#','####.']);
+  def('t', ['.#..','.#..','###.','.#..','.#..','.#..','..##']);
+  def('u', ['.....','.....','#...#','#...#','#...#','#..##','.##.#']);
+  def('v', ['.....','.....','#...#','#...#','#...#','.#.#.','..#..']);
+  def('w', ['.....','.....','#...#','#...#','#.#.#','#.#.#','.#.#.']);
+  def('x', ['.....','.....','#...#','.#.#.','..#..','.#.#.','#...#']);
+  def('y', ['.....','.....','#...#','#...#','#...#','.####','....#','.###.']);
+  def('z', ['.....','.....','#####','...#.','..#..','.#...','#####']);
+  // Polish
+  def('ą', ['.....','.....','.###.','....#','.####','#...#','.####','...#.']);
+  def('ć', ['..#..','.....','.###.','#....','#....','#...#','.###.']);
+  def('ę', ['.....','.....','.###.','#...#','#####','#....','.###.','..#..']);
+  def('ł', ['##.','.#.','.##','##.','.#.','.#.','###']);
+  def('ń', ['..#..','.....','####.','#...#','#...#','#...#','#...#']);
+  def('ó', ['..#..','.....','.###.','#...#','#...#','#...#','.###.']);
+  def('ś', ['..#..','.....','.####','#....','.###.','....#','####.']);
+  def('ź', ['...#.','.....','#####','...#.','..#..','.#...','#####']);
+  def('ż', ['..#..','.....','#####','...#.','..#..','.#...','#####']);
+  def('Ą', ['.###.','#...#','#...#','#####','#...#','#...#','#...#','...#.']);
+  def('Ć', ['..#..','.###.','#...#','#....','#....','#...#','.###.']);
+  def('Ę', ['#####','#....','#....','####.','#....','#....','#####','..#..']);
+  def('Ł', ['#....','#....','#.#..','##...','#....','#....','#####']);
+  def('Ń', ['..#..','#...#','##..#','#.#.#','#..##','#...#','#...#']);
+  def('Ó', ['..#..','.###.','#...#','#...#','#...#','#...#','.###.']);
+  def('Ś', ['..#..','.####','#....','.###.','....#','....#','####.']);
+  def('Ź', ['...#.','#####','....#','...#.','..#..','.#...','#####']);
+  def('Ż', ['..#..','#####','....#','...#.','..#..','.#...','#####']);
+  // punctuation
+  def(' ', ['...','...','...','...','...','...','...']);
+  def('.', ['..','..','..','..','..','##','##']);
+  def(',', ['..','..','..','..','..','.#','.#','#.']);
+  def(':', ['..','##','##','..','##','##','..']);
+  def(';', ['..','##','##','..','##','.#','#.']);
+  def('!', ['#','#','#','#','#','.','#']);
+  def('?', ['.###.','#...#','....#','...#.','..#..','.....','..#..']);
+  def("'", ['#','#','.','.','.','.','.']);
+  def('"', ['#.#','#.#','...','...','...','...','...']);
+  def('-', ['....','....','....','####','....','....','....']);
+  def('_', ['.....','.....','.....','.....','.....','.....','#####']);
+  def('/', ['....#','...#.','...#.','..#..','.#...','.#...','#....']);
+  def('\\', ['#....','.#...','.#...','..#..','...#.','...#.','....#']);
+  def('(', ['.#','#.','#.','#.','#.','#.','.#']);
+  def(')', ['#.','.#','.#','.#','.#','.#','#.']);
+  def('[', ['##','#.','#.','#.','#.','#.','##']);
+  def(']', ['##','.#','.#','.#','.#','.#','##']);
+  def('&', ['.##..','#..#.','#.#..','.#...','#.#.#','#..#.','.##.#']);
+  def('+', ['.....','..#..','..#..','#####','..#..','..#..','.....']);
+  def('#', ['.#.#.','.#.#.','#####','.#.#.','#####','.#.#.','.#.#.']);
+  def('*', ['.....','#.#.#','.###.','#####','.###.','#.#.#','.....']);
+  def('=', ['....','....','####','....','####','....','....']);
+  def('<', ['...','..#','.#.','#..','.#.','..#','...']);
+  def('>', ['...','#..','.#.','..#','.#.','#..','...']);
+  def('%', ['##..#','##.#.','...#.','..#..','.#...','.#.##','#..##']);
+  def('°', ['.##','#..#'.slice(0,3),'.##','...','...','...','...']);
+  def('@', ['.###.','#...#','#.###','#.#.#','#.###','#....','.###.']);
+  // diacritics not in the table fall back to their base letter, anything else to '?'
+  const FALLBACK = { 'ä':'a','ö':'o','ü':'u','é':'e','è':'e','á':'a','à':'a','í':'i','ú':'u','ñ':'n','ß':'s','Ä':'A','Ö':'O','Ü':'U','É':'E','č':'c','š':'s','ž':'z','ě':'e','ř':'r','ů':'u','ý':'y','’':"'",'–':'-','—':'-','…':'.' };
+  const GLYPH_H = 8;
+  function glyph(ch){ let g = F[ch]; if (!g && FALLBACK[ch]) g = F[FALLBACK[ch]]; if (!g) g = F['?']; return g; }
+  function glyphAdv(g){ return g[0].length + 1; }      // one blank column of tracking
+  function textWidth(s, sc){ sc = sc || 1; let w = 0; for (const ch of s) w += glyphAdv(glyph(ch)) * sc; return Math.max(0, w - sc); }
+  function dot(x, y, v){ if (x >= 0 && x < LCD_W && y >= 0 && y < LCD_H) fb[y * LCD_W + x] = v; }
+  function rect(x, y, w, h, v){ for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) dot(x + i, y + j, v); }
+  function text(x, y, s, sc, v){
+    sc = sc || 1; v = v === undefined ? 1 : v;
+    for (const ch of s){
+      const g = glyph(ch), gw = g[0].length;
+      if (x + gw * sc > 0 && x < LCD_W){
+        for (let r = 0; r < g.length; r++){ const row = g[r]; for (let c = 0; c < gw; c++) if (row[c] === '#') rect(x + c * sc, y + r * sc, sc, sc, v); }
+      }
+      x += (gw + 1) * sc;
+    }
+  }
+  function textCenter(y, s, sc, v){ text(Math.round((LCD_W - textWidth(s, sc)) / 2), y, s, sc, v); }
+  function textRight(xr, y, s, sc, v){ text(xr - textWidth(s, sc), y, s, sc, v); }
+  function bitmap(x, y, rows, v){ rows.forEach((row, j) => { for (let i = 0; i < row.length; i++) if (row[i] === '#') dot(x + i, y + j, v === undefined ? 1 : v); }); }
+  const ICON = {
+    play:  ['#....', '##...', '###..', '####.', '###..', '##...', '#....'],
+    pause: ['##.##', '##.##', '##.##', '##.##', '##.##', '##.##', '##.##'],
+    stop:  ['#####', '#####', '#####', '#####', '#####', '#####', '#####'],
+    fan:   ['...##....', '..####...', '...###...', '##..#..##', '####.####', '##..#..##', '...###...', '..####...', '...##....'],
+    // thermometer: stem with scale marks, bulb at the bottom (the climate temperature indicator)
+    temp:  ['..#..', '.#.#.', '##.##', '.#.#.', '##.##', '.#.#.', '.###.', '#####', '#####', '.###.'],
+    note:  ['...#', '...#', '...#', '.###', '####', '.##.'],
+  };
+
+  // ---- paint ------------------------------------------------------------------------------
+  function fitScale(){
+    // measure the bezel (a real grid track), not the window, which shrinks to the canvas
+    const bezel = lcd.closest('.lcd-bezel');
+    const avail = Math.max(LCD_W, Math.floor((bezel.clientWidth || LCD_W * 2) - 38));
+    const s = Math.max(1, Math.min(4, Math.floor(avail / LCD_W)));
+    if (s === scale && lcd.width === LCD_W * s) return;
+    scale = s; lcd.width = LCD_W * s; lcd.height = LCD_H * s; lcd.style.width = lcd.width + 'px'; lcd.style.height = lcd.height + 'px';
+    if (s >= 3){ const p = document.createElement('canvas'); p.width = s; p.height = s; const pc = p.getContext('2d'); pc.fillStyle = COL_BG; pc.fillRect(s - 1, 0, 1, s); pc.fillRect(0, s - 1, s, 1); gridPattern = ctx.createPattern(p, 'repeat'); } else gridPattern = null;
+    $('lcd-meta').textContent = LCD_W + ' × ' + LCD_H + ' dots · ' + s + '× zoom';
+    dirty = true;
+  }
+  // strictly two states, like the real glass: ink or backlight
+  const on = [0x15, 0x1a, 0x14], off = [0xcf, 0xd6, 0xc3];
+  function paint(){
+    const d = dotImage.data;
+    for (let i = 0, p = 0; i < fb.length; i++, p += 4){ const c = fb[i] ? on : off; d[p] = c[0]; d[p+1] = c[1]; d[p+2] = c[2]; d[p+3] = 255; }
+    dctx.putImageData(dotImage, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = COL_BG; ctx.fillRect(0, 0, lcd.width, lcd.height);
+    ctx.drawImage(dotCanvas, 0, 0, lcd.width, lcd.height);
+    if (gridPattern){ ctx.fillStyle = gridPattern; ctx.fillRect(0, 0, lcd.width, lcd.height); }
+  }
+
+  // =====================================================================================
+  // Model
+  // =====================================================================================
+  const np = { status:'unknown', title:'', artist:'', album:'', track:0, total:0, pos:0, len:0, posAt:performance.now() };
+  const conn = { state:'—', phone:'', a2dp:false, stream:false, avrcp:false, autoplay:true };
+  let volume = 14, mode = 'demo', dirty = true;
+  let overlay = null;           // { kind:'volume'|'text', text, until }
+  let waiting = false;
+  const climate = { left: 19, right: 18, fan: 'OFF' };
+  function posNow(){ return np.status === 'playing' ? np.pos + (performance.now() - np.posAt) : np.pos; }
+
+  // marquee state per line
+  const scrollers = {};
+  function scrolled(key, s, sc, maxW, now){
+    const w = textWidth(s, sc);
+    let st = scrollers[key]; if (!st || st.text !== s){ st = scrollers[key] = { text: s, off: 0, hold: now + 1800, last: now }; }
+    if (w <= maxW) return { x: 0, w, scroll: false };
+    if (now > st.hold){ const steps = Math.floor((now - st.last) / 70); if (steps > 0){ st.off += steps; st.last = now; } }
+    const span = w + 6 * sc * 3;
+    if (st.off > span){ st.off = 0; st.hold = now + 1800; }
+    return { x: -st.off, w, span, scroll: true };
+  }
+
+  // ---- iPod menu (what the Lingo 0x04 emulator will expose) -----------------------------------
+  const menuTree = {
+    root: { title: 'iPod', items: ['Now playing', 'Playlists', 'Artists', 'Albums', 'Songs'] },
+    Playlists: { title: 'Playlists', items: ['Bluetooth'] },
+    Artists: { title: 'Artists', items: () => [np.artist || 'Unknown artist'] },
+    Albums: { title: 'Albums', items: () => [np.album || 'Unknown album'] },
+    Songs: { title: 'Songs', items: () => [np.title || 'Unknown song'] },
+    Bluetooth: { title: 'Bluetooth', items: () => [np.title || 'Unknown song'] },
+  };
+  let menuPath = null, menuSel = 0;
+  function menuItems(){ const n = menuTree[menuPath]; return typeof n.items === 'function' ? n.items() : n.items; }
+  function menuOpen(){ menuPath = 'root'; menuSel = 0; dirty = true; }
+  function menuClose(){ menuPath = null; dirty = true; }
+  function menuMove(d){ if (!menuPath) return; const n = menuItems().length; menuSel = (menuSel + d + n) % n; dirty = true; }
+  function menuEnter(){
+    const t = menuItems()[menuSel];
+    if (menuTree[t]) { menuPath = t; menuSel = 0; dirty = true; return; }
+    menuClose(); log('HU: PlayCurrentSelection "' + t + '"'); if (np.status !== 'playing') command('toggle');
+  }
+  function menuBack(){ if (!menuPath) return; if (menuPath === 'root') menuClose(); else { menuPath = 'root'; menuSel = 0; dirty = true; } }
+
+  function showOverlay(kind, textValue){ overlay = { kind, text: textValue, until: performance.now() + 1500 }; dirty = true; }
+
+  // =====================================================================================
+  // Screen composition (everything above the rule is the audio area; below is climate)
+  // =====================================================================================
+  function compose(now){
+    fb.fill(0);
+    const RULE_Y = 46;
+    if (waiting){
+      textCenter(6, 'Waiting for data from the Pico', 1);
+      textCenter(18, 'press s on the console or play a track', 1);
+    } else if (overlay && now < overlay.until){
+      if (overlay.kind === 'volume'){
+        textCenter(3, 'VOLUME ' + volume, 2);
+        const segs = 20, x0 = 28, segW = 9;
+        for (let i = 0; i < segs; i++){ const x = x0 + i * (segW + 1); rect(x, 29, segW, 1, 1); rect(x, 37, segW, 1, 1); rect(x, 29, 1, 9, 1); rect(x + segW - 1, 29, 1, 9, 1); if (i < volume) rect(x, 29, segW, 9, 1); }
+      } else {
+        textCenter(13, overlay.text, 2);
+      }
+    } else if (menuPath){
+      const n = menuTree[menuPath]; const items = menuItems();
+      rect(0, 0, LCD_W, 10, 1); textCenter(1, n.title, 1, 0);
+      const rowsVisible = 3, first = Math.max(0, Math.min(menuSel - 1, items.length - rowsVisible));
+      for (let i = 0; i < rowsVisible && first + i < items.length; i++){
+        const idx = first + i, y = 12 + i * 11, sel = idx === menuSel;
+        if (sel) rect(0, y - 1, LCD_W, 11, 1);
+        text(4, y, items[idx], 1, sel ? 0 : 1);
+        if (menuTree[items[idx]]) text(LCD_W - 10, y, '>', 1, sel ? 0 : 1);
+      }
+      if (items.length > rowsVisible){ rect(LCD_W - 3, 12, 2, 32, 0); const h = Math.max(4, Math.round(32 * rowsVisible / items.length)); rect(LCD_W - 3, 12 + Math.round((32 - h) * first / Math.max(1, items.length - rowsVisible)), 2, h, 1); }
+    } else {
+      // line 1: source left, state + time right
+      bitmap(2, 1, ICON.note);
+      text(8, 1, 'iPod', 1);
+      const stateIcon = np.status === 'playing' ? ICON.play : np.status === 'paused' ? ICON.pause : ICON.stop;
+      const timeStr = fmt(posNow()) + (np.len ? ' / ' + fmt(np.len) : '');
+      const tw = textWidth(timeStr, 1);
+      bitmap(LCD_W - 2 - tw - 8, 1, stateIcon); text(LCD_W - 2 - tw, 1, timeStr, 1);
+      if (np.total) textCenter(1, np.track + '/' + np.total, 1);
+      // line 2 (big): title, scrolls when wider than the panel
+      const title = np.title || (conn.state === 'connected' ? '' : 'No iPod');
+      const s2 = scrolled('title', title, 2, LCD_W - 4, now);
+      if (s2.scroll){ text(2 + s2.x, 11, title, 2); text(2 + s2.x + s2.span, 11, title, 2); } else textCenter(11, title, 2);
+      // line 3 (small): artist, album alternates every 5 s when present
+      const showAlbum = np.album && Math.floor(now / 5000) % 2 === 1;
+      const l3 = showAlbum ? np.album : np.artist;
+      const s3 = scrolled('line3', l3, 1, LCD_W - 4, now);
+      if (s3.scroll){ text(2 + s3.x, 35, l3, 1); text(2 + s3.x + s3.span, 35, l3, 1); } else textCenter(35, l3, 1);
+    }
+    // rule + climate row (always on, like the real ICM)
+    rect(0, RULE_Y, LCD_W, 1, 1);
+    bitmap(4, 50, ICON.temp); text(12, 49, String(climate.left), 2);
+    bitmap(LCD_W - 36, 50, ICON.temp); text(LCD_W - 28, 49, String(climate.right), 2);
+    const fw = 9 + 3 + textWidth(climate.fan, 1); const fx = Math.round((LCD_W - fw) / 2);
+    bitmap(fx, 50, ICON.fan); text(fx + 12, 51, climate.fan, 1);
+  }
+
+  let lastTick = 0;
+  function frame(now){
+    if (overlay && now >= overlay.until){ overlay = null; dirty = true; }
+    if (now - lastTick > 66 || dirty){ lastTick = now; dirty = false; compose(now); paint(); }
+    requestAnimationFrame(frame);
+  }
+
+  // =====================================================================================
+  // Demo player (stands in for the phone)
+  // =====================================================================================
+  const demo = (() => {
+    const tracks = [
+      { title:'Zenit', artist:'Taco Hemingway', album:'Marmur', len: 221000 },
+      { title:'Wschód', artist:'Dawid Podsiadło', album:'Małomiasteczkowy', len: 199000 },
+      { title:'Bohemian Rhapsody', artist:'Queen', album:'A Night at the Opera', len: 354000 },
+      { title:'Chłopaki nie płaczą', artist:'T.Love', album:'Prymityw', len: 226000 },
+      { title:'Everything In Its Right Place', artist:'Radiohead', album:'Kid A', len: 251000 },
+    ];
+    let i = 0;
+    function load(startPos){ const t = tracks[i]; Object.assign(np, { title:t.title, artist:t.artist, album:t.album, len:t.len, track:i+1, total:tracks.length, pos:startPos||0, posAt:performance.now() }); dirty = true; log('phone: track changed → ' + t.artist + ' – ' + t.title); }
+    return {
+      start(){ i = 0; np.status = 'playing'; load(62000); Object.assign(conn, { state:'connected', phone:'CC:F9:F0:7E:FF:AA (demo)', a2dp:true, stream:true, avrcp:true, autoplay:true }); renderConn(); },
+      tick(){ if (np.status === 'playing' && np.len && posNow() >= np.len){ i = (i+1) % tracks.length; load(0); } },
+      next(){ i = (i+1) % tracks.length; load(0); },
+      prev(){ if (posNow() > 3000){ np.pos = 0; np.posAt = performance.now(); } else { i = (i-1+tracks.length) % tracks.length; load(0); } },
+      toggle(){ const p = posNow(); np.pos = p; np.posAt = performance.now(); np.status = np.status === 'playing' ? 'paused' : 'playing'; dirty = true; log('phone: ' + np.status); },
+    };
+  })();
+  setInterval(() => { if (mode === 'demo') demo.tick(); }, 500);
+
+  // =====================================================================================
+  // Commands from the "car"
+  // =====================================================================================
+  function command(cmd){
+    switch (cmd){
+      case 'next': case 'right': log('HU → iPod: PlayControl 0x03 (next)', true); if (menuPath) break; if (mode === 'demo') demo.next(); else serial.send('n'); break;
+      case 'prev': case 'left': log('HU → iPod: PlayControl 0x04 (previous)', true); if (menuPath) break; if (mode === 'demo') demo.prev(); else serial.send('b'); break;
+      case 'up': if (menuPath) menuMove(-1); else command('prev'); break;
+      case 'down': if (menuPath) menuMove(1); else command('next'); break;
+      case 'toggle': case 'enter':
+        if (menuPath){ menuEnter(); break; }
+        log('HU → iPod: PlayControl 0x01 (toggle play/pause)', true); if (mode === 'demo') demo.toggle(); else serial.send(' '); break;
+      case 'volup': volume = Math.min(20, volume + 1); showOverlay('volume'); $('knob-vol').setAttribute('aria-valuenow', String(volume)); break;
+      case 'voldown': volume = Math.max(0, volume - 1); showOverlay('volume'); $('knob-vol').setAttribute('aria-valuenow', String(volume)); break;
+      case 'menu': if (menuPath) menuClose(); else { menuOpen(); log('HU → iPod: GetNumberCategorizedDBRecords / RetrieveCategorizedDatabaseRecords'); } break;
+      case 'exit': if (menuPath) menuBack(); else showOverlay('text', 'iPod'); break;
+      case 'mode': showOverlay('text', 'iPod'); break;
+      case 'src-am': showOverlay('text', 'AM'); break;
+      case 'src-fm': showOverlay('text', 'FM1'); break;
+      case 'src-cd': showOverlay('text', 'No disc'); break;
+      case 'eject': showOverlay('text', 'No disc'); break;
+      case 'phone': showOverlay('text', 'Phone'); break;
+      case 'tune+': if (menuPath) menuMove(1); else command('next'); break;
+      case 'tune-': if (menuPath) menuMove(-1); else command('prev'); break;
+    }
+  }
+  document.querySelectorAll('[data-cmd]').forEach(b => {
+    b.addEventListener('click', () => { command(b.dataset.cmd); b.classList.add('pressed'); setTimeout(() => b.classList.remove('pressed'), 120); });
+  });
+  function knob(el, plus, minus){
+    let rot = 0, dragX = null, acc = 0;
+    const step = d => { rot += d * 15; el.style.setProperty('--rot', rot + 'deg'); command(d > 0 ? plus : minus); };
+    el.addEventListener('pointerdown', e => { dragX = e.clientX; acc = 0; el.setPointerCapture(e.pointerId); });
+    el.addEventListener('pointermove', e => { if (dragX === null) return; acc += e.clientX - dragX; dragX = e.clientX; while (acc > 18){ acc -= 18; step(1); } while (acc < -18){ acc += 18; step(-1); } });
+    el.addEventListener('pointerup', () => { dragX = null; }); el.addEventListener('pointercancel', () => { dragX = null; });
+    el.addEventListener('wheel', e => { e.preventDefault(); step(e.deltaY > 0 ? 1 : -1); }, { passive:false });
+    el.addEventListener('keydown', e => { if (e.key === 'ArrowRight' || e.key === 'ArrowUp'){ e.preventDefault(); step(1); } if (e.key === 'ArrowLeft' || e.key === 'ArrowDown'){ e.preventDefault(); step(-1); } if (e.key === 'Enter') command('enter'); });
+  }
+  knob($('knob-tune'), 'tune+', 'tune-');
+  knob($('knob-vol'), 'volup', 'voldown');
+  document.addEventListener('keydown', e => {
+    if (e.target.closest('button, .knob, input, textarea, summary')) return;
+    const map = { ArrowRight:'right', ArrowLeft:'left', ' ':'toggle', ArrowUp:'up', ArrowDown:'down', m:'menu', Escape:'exit', Enter:'enter', '+':'volup', '-':'voldown' };
+    if (map[e.key]){ e.preventDefault(); command(map[e.key]); }
+  });
+
+  // =====================================================================================
+  // Connection chips
+  // =====================================================================================
+  function renderConn(){
+    const c = $('chip-conn'); c.className = 'chip ' + (conn.state === 'connected' ? 'ok' : (conn.state === 'pairing' || conn.state === 'reconnecting') ? 'warn' : '');
+    c.innerHTML = '<i></i>' + esc(conn.state);
+    const a = $('chip-avrcp'); a.className = 'chip ' + (conn.avrcp ? 'ok' : ''); a.innerHTML = '<i></i>AVRCP ' + (conn.avrcp ? 'up' : '—');
+    $('kv-state').textContent = conn.state; $('kv-phone').textContent = conn.phone || 'none paired';
+    $('kv-stream').textContent = conn.a2dp ? (conn.stream ? 'A2DP connected, streaming' : 'A2DP connected, idle') : '—';
+    $('kv-autoplay').textContent = conn.autoplay ? 'on' : 'off';
+    dirty = true;
+  }
+
+  // =====================================================================================
+  // Web Serial
+  // =====================================================================================
+  const serial = (() => {
+    let port = null, writer = null, reader = null, buf = '';
+    const enc = new TextEncoder();
+    const supported = !!(navigator.serial && navigator.serial.requestPort);
+    function handleLine(line){
+      line = line.replace(/\r$/, ''); if (!line) return;
+      if (line.startsWith('@J ')){
+        try {
+          const j = JSON.parse(line.slice(3));
+          if (j.np){ Object.assign(np, { status: String(j.np.status).toLowerCase(), title:j.np.title, artist:j.np.artist, album:j.np.album, track:j.np.track, total:j.np.total, pos:j.np.pos, len:j.np.len, posAt:performance.now() }); waiting = false; dirty = true; }
+          if (j.conn){ Object.assign(conn, j.conn); renderConn(); }
+        } catch (e){ log('bad JSON line: ' + line); }
+        return;
+      }
+      log(line);
+    }
+    async function readLoop(){
+      const dec = new TextDecoder();
+      try {
+        while (port && port.readable){
+          reader = port.readable.getReader();
+          try { for (;;){ const { value, done } = await reader.read(); if (done) break; buf += dec.decode(value, { stream:true }); let i; while ((i = buf.indexOf('\n')) >= 0){ handleLine(buf.slice(0, i)); buf = buf.slice(i + 1); } } }
+          finally { reader.releaseLock(); reader = null; }
+        }
+      } catch (e){ log('serial read error: ' + e.message); }
+      disconnect('port closed');
+    }
+    async function connect(){
+      try {
+        port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 115200 });
+        writer = port.writable.getWriter();
+        setMode('serial'); waiting = true; dirty = true;
+        log('serial: connected, asking for status (s)', true);
+        readLoop(); await send('s');
+      } catch (e){ log('serial: ' + e.message); $('serial-note').textContent = e.message; port = null; }
+    }
+    async function disconnect(why){
+      if (writer){ try { writer.releaseLock(); } catch (e) {} writer = null; }
+      if (reader){ try { await reader.cancel(); } catch (e) {} }
+      if (port){ try { await port.close(); } catch (e) {} port = null; }
+      if (mode === 'serial'){ log('serial: disconnected' + (why ? ' (' + why + ')' : '')); setMode('demo'); }
+    }
+    async function send(ch){ if (!writer) return; try { await writer.write(enc.encode(ch)); } catch (e){ log('serial write error: ' + e.message); } }
+    return { supported, connect, disconnect, send, get open(){ return !!port; } };
+  })();
+
+  function setMode(m){
+    mode = m; menuClose(); overlay = null; waiting = false;
+    const chip = $('chip-src'); chip.className = 'chip ' + (m === 'serial' ? 'ok' : ''); chip.innerHTML = '<i></i>' + (m === 'serial' ? 'Pico · USB' : 'Demo');
+    $('btn-serial').textContent = m === 'serial' ? 'Disconnect Pico' : 'Connect Pico (Web Serial)';
+    $('btn-demo').disabled = m === 'demo';
+    if (m === 'demo') demo.start();
+    dirty = true;
+  }
+  $('btn-demo').addEventListener('click', () => { if (serial.open) serial.disconnect('switched to demo'); else setMode('demo'); });
+  $('btn-serial').addEventListener('click', () => { if (serial.open) serial.disconnect('button'); else serial.connect(); });
+  if (!serial.supported){ $('btn-serial').disabled = true; $('serial-note').textContent = 'Web Serial is not available in this view. Open tools/cockpit.html in Chrome or Edge to talk to the Pico.'; }
+
+  // boot
+  fitScale();
+  new ResizeObserver(fitScale).observe(lcd.closest('.lcd-bezel'));
+  window.addEventListener('resize', fitScale);
+  setMode('demo');
+  log('demo player started · keys: ← → ↑ ↓ space m Esc Enter + -');
+  requestAnimationFrame(frame);
+})();
+</script>

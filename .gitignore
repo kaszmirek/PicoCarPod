@@ -1,0 +1,9 @@
+build/
+lib/pico-extras/
+.vscode/settings.json
+*.uf2
+*.elf
+*.bin
+*.hex
+*.dis
+*.map
