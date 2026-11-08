@@ -182,7 +182,7 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
       letters; every dot is either ink or backlight. Change <code>LCD_W</code> / <code>LCD_H</code> in the script if the real
       panel differs. Demo mode runs a simulated phone. With a Pico on USB the page reads the <code>@J</code> JSON lines from
       the firmware console and sends the console keys (<code>n</code>, <code>b</code>, space). Web Serial needs Chrome or Edge and is
-      blocked inside claude.ai: open <code>tools/cockpit.html</code> from the repo directly in the browser.</p>
+      blocked inside claude.ai: open <code>firmware/tools/cockpit.html</code> from the repo directly in the browser.</p>
     <dl class="kv">
       <dt>Connection</dt><dd id="kv-state">—</dd>
       <dt>Phone</dt><dd id="kv-phone">—</dd>
@@ -638,7 +638,7 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
   }
   $('btn-demo').addEventListener('click', () => { if (serial.open) serial.disconnect('switched to demo'); else setMode('demo'); });
   $('btn-serial').addEventListener('click', () => { if (serial.open) serial.disconnect('button'); else serial.connect(); });
-  if (!serial.supported){ $('btn-serial').disabled = true; $('serial-note').textContent = 'Web Serial is not available in this view. Open tools/cockpit.html in Chrome or Edge to talk to the Pico.'; }
+  if (!serial.supported){ $('btn-serial').disabled = true; $('serial-note').textContent = 'Web Serial is not available in this view. Open firmware/tools/cockpit.html in Chrome or Edge to talk to the Pico.'; }
 
   // boot
   fitScale();

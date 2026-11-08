@@ -1,9 +1,28 @@
-build/
-lib/pico-extras/
-.vscode/settings.json
+# --- firmware ---
+firmware/build/
+firmware/lib/pico-extras/
 *.uf2
 *.elf
 *.bin
 *.hex
 *.dis
 *.map
+
+# --- hardware (KiCad) ---
+*-backups/
+fp-info-cache
+*.lck
+\#auto_saved_files#
+_autosave-*
+*.kicad_prl
+~*.kicad_sch
+~*.kicad_pcb
+
+# --- mechanical ---
+*.FCBak
+*.FCStd1
+*.gcode
+
+# --- editors / OS ---
+.vscode/settings.json
+.DS_Store
